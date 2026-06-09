@@ -1,4 +1,5 @@
 export type ItemType = "lost" | "found";
+export type ItemStatus = "open" | "matched" | "resolved";
 
 export type ItemPost = {
   id: string;
@@ -7,8 +8,8 @@ export type ItemPost = {
   description: string;
   category: string;
   location: string;
-  date: string;
-  imageUrl?: string;
-  status: "open" | "matched" | "resolved";
-  createdAt: string;
+  item_date: string;
+  status: ItemStatus;
+  image_url?: string | null;
+  created_at: string;
 };

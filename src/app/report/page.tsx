@@ -1,4 +1,45 @@
+"use client";
+
+import { FormEvent, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+
 export default function ReportItemPage() {
+  const [type, setType] = useState<"lost" | "found">("lost");
+  const [title, setTitle] = useState("");
+  const [category, setCategory] = useState("Electronics");
+  const [location, setLocation] = useState("");
+  const [itemDate, setItemDate] = useState("");
+  const [description, setDescription] = useState("");
+  const [message, setMessage] = useState("");
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage("Submitting report...");
+
+    const { error } = await supabase.from("item_posts").insert({
+      type,
+      title,
+      category,
+      location,
+      item_date: itemDate,
+      description,
+      status: "open",
+    });
+
+    if (error) {
+      setMessage(`Error: ${error.message}`);
+      return;
+    }
+
+    setTitle("");
+    setCategory("Electronics");
+    setLocation("");
+    setItemDate("");
+    setDescription("");
+    setType("lost");
+    setMessage("Item report submitted successfully.");
+  }
+
   return (
     <main className="min-h-screen bg-slate-50 px-6 py-10">
       <section className="mx-auto max-w-2xl rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
@@ -7,12 +48,18 @@ export default function ReportItemPage() {
           Submit a lost or found item report for the campus community.
         </p>
 
-        <form className="mt-8 space-y-5">
+        <form onSubmit={handleSubmit} className="mt-8 space-y-5">
           <div>
             <label className="block text-sm font-medium text-slate-700">
               Report Type
             </label>
-            <select className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+            <select
+              value={type}
+              onChange={(event) =>
+                setType(event.target.value as "lost" | "found")
+              }
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+            >
               <option value="lost">Lost Item</option>
               <option value="found">Found Item</option>
             </select>
@@ -23,7 +70,10 @@ export default function ReportItemPage() {
               Item Title
             </label>
             <input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
               type="text"
+              required
               placeholder="Example: Black AirPods Case"
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             />
@@ -33,7 +83,11 @@ export default function ReportItemPage() {
             <label className="block text-sm font-medium text-slate-700">
               Category
             </label>
-            <select className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+            <select
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+            >
               <option>Electronics</option>
               <option>School Supplies</option>
               <option>Clothing</option>
@@ -48,7 +102,10 @@ export default function ReportItemPage() {
               Campus Location
             </label>
             <input
+              value={location}
+              onChange={(event) => setLocation(event.target.value)}
               type="text"
+              required
               placeholder="Example: Library, Beatty Hall, Watson Hall"
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             />
@@ -59,7 +116,10 @@ export default function ReportItemPage() {
               Date Lost/Found
             </label>
             <input
+              value={itemDate}
+              onChange={(event) => setItemDate(event.target.value)}
               type="date"
+              required
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             />
           </div>
@@ -69,29 +129,27 @@ export default function ReportItemPage() {
               Description
             </label>
             <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
               rows={4}
+              required
               placeholder="Describe the item without revealing sensitive ownership details."
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700">
-              Upload Photo
-            </label>
-            <input
-              type="file"
-              accept="image/*"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-            />
-          </div>
-
           <button
-            type="button"
+            type="submit"
             className="w-full rounded-lg bg-slate-900 px-4 py-3 font-medium text-white hover:bg-slate-700"
           >
             Submit Report
           </button>
+
+          {message && (
+            <p className="rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-700">
+              {message}
+            </p>
+          )}
         </form>
       </section>
     </main>

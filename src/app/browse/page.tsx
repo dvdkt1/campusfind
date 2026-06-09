@@ -1,56 +1,42 @@
-import { mockItems } from "@/lib/mockItems";
+import { supabase } from "@/lib/supabaseClient";
+import type { ItemPost } from "@/lib/types";
 
-export default function BrowsePage() {
+export const dynamic = "force-dynamic";
+
+export default async function BrowsePage() {
+  const { data, error } = await supabase
+    .from("item_posts")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  const items = (data ?? []) as ItemPost[];
+
   return (
     <main className="min-h-screen bg-slate-50 px-6 py-10">
       <section className="mx-auto max-w-6xl">
-        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">
-              Browse Lost & Found Listings
-            </h1>
-            <p className="mt-2 text-sm text-slate-600">
-              Search and filter campus item reports.
-            </p>
-          </div>
-
-          <input
-            type="text"
-            placeholder="Search by keyword..."
-            className="rounded-lg border border-slate-300 px-3 py-2 md:w-80"
-          />
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">
+            Browse Lost & Found Listings
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">
+            View item reports submitted by the campus community.
+          </p>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-4">
-          <select className="rounded-lg border border-slate-300 px-3 py-2">
-            <option>All Types</option>
-            <option>Lost</option>
-            <option>Found</option>
-          </select>
+        {error && (
+          <p className="mt-6 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+            Error loading items: {error.message}
+          </p>
+        )}
 
-          <select className="rounded-lg border border-slate-300 px-3 py-2">
-            <option>All Categories</option>
-            <option>Electronics</option>
-            <option>School Supplies</option>
-            <option>Clothing</option>
-            <option>Keys/ID</option>
-            <option>Personal Item</option>
-          </select>
-
-          <input
-            type="text"
-            placeholder="Location"
-            className="rounded-lg border border-slate-300 px-3 py-2"
-          />
-
-          <input
-            type="date"
-            className="rounded-lg border border-slate-300 px-3 py-2"
-          />
-        </div>
+        {!error && items.length === 0 && (
+          <p className="mt-8 rounded-lg bg-white p-6 text-center text-slate-600">
+            No item reports have been submitted yet.
+          </p>
+        )}
 
         <div className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {mockItems.map((item) => (
+          {items.map((item) => (
             <article
               key={item.id}
               className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
@@ -60,7 +46,9 @@ export default function BrowsePage() {
                   {item.type}
                 </span>
 
-                <span className="text-xs text-slate-500">{item.status}</span>
+                <span className="text-xs capitalize text-slate-500">
+                  {item.status}
+                </span>
               </div>
 
               <h2 className="mt-4 text-lg font-semibold text-slate-900">
@@ -74,7 +62,7 @@ export default function BrowsePage() {
               <div className="mt-4 space-y-1 text-sm text-slate-500">
                 <p>Category: {item.category}</p>
                 <p>Location: {item.location}</p>
-                <p>Date: {item.date}</p>
+                <p>Date: {item.item_date}</p>
               </div>
             </article>
           ))}
