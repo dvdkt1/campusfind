@@ -8,9 +8,9 @@ export const mockItems: ItemPost[] = [
     description: "Lost near the library. The case has a small scratch on the front.",
     category: "Electronics",
     location: "Library",
-    date: "2026-06-01",
+    item_date: "2026-06-01",
     status: "open",
-    createdAt: "2026-06-01T10:00:00Z",
+    created_at: "2026-06-01T10:00:00Z",
   },
   {
     id: "2",
@@ -19,8 +19,8 @@ export const mockItems: ItemPost[] = [
     description: "Blue water bottle found in a classroom.",
     category: "Personal Item",
     location: "Beatty Hall",
-    date: "2026-06-01",
+    item_date: "2026-06-01",
     status: "open",
-    createdAt: "2026-06-01T11:00:00Z",
+    created_at: "2026-06-01T11:00:00Z",
   },
 ];

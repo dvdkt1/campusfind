@@ -2,156 +2,279 @@
 
 import { FormEvent, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import type { ItemType } from "@/lib/types";
 
-export default function ReportItemPage() {
-  const [type, setType] = useState<"lost" | "found">("lost");
+const categories = [
+  "Electronics",
+  "ID / Cards",
+  "Keys",
+  "Clothing",
+  "Books",
+  "Water Bottle",
+  "Bag",
+  "Other",
+];
+
+const allowedImageTypes = ["image/jpeg", "image/png", "image/webp"];
+const maxFileSizeBytes = 5 * 1024 * 1024; // 5 MB
+
+export default function ReportPage() {
+  const [type, setType] = useState<ItemType>("lost");
   const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [category, setCategory] = useState("Electronics");
   const [location, setLocation] = useState("");
   const [itemDate, setItemDate] = useState("");
-  const [description, setDescription] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+
   const [message, setMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  function handleImageChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    setErrorMessage("");
+    setImageFile(null);
+
+    if (!file) {
+      return;
+    }
+
+    if (!allowedImageTypes.includes(file.type)) {
+      setErrorMessage("Only JPEG, PNG, or WebP images are allowed.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > maxFileSizeBytes) {
+      setErrorMessage("Image must be 5 MB or smaller.");
+      event.target.value = "";
+      return;
+    }
+
+    setImageFile(file);
+  }
+
+  async function uploadImageIfSelected() {
+    if (!imageFile) {
+      return null;
+    }
+
+    const fileExtension = imageFile.name.split(".").pop();
+    const filePath = `item-posts/${crypto.randomUUID()}.${fileExtension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("item-images")
+      .upload(filePath, imageFile, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: imageFile.type,
+      });
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    const { data } = supabase.storage
+      .from("item-images")
+      .getPublicUrl(filePath);
+
+    return data.publicUrl;
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setMessage("Submitting report...");
+  event.preventDefault();
+
+  const form = event.currentTarget;
+
+  setMessage("");
+  setErrorMessage("");
+  setIsSubmitting(true);
+
+  try {
+    const imageUrl = await uploadImageIfSelected();
 
     const { error } = await supabase.from("item_posts").insert({
       type,
       title,
+      description,
       category,
       location,
       item_date: itemDate,
-      description,
+      image_url: imageUrl,
       status: "open",
     });
 
     if (error) {
-      setMessage(`Error: ${error.message}`);
-      return;
+      throw error;
     }
 
+    setMessage("Item report submitted successfully.");
+    setType("lost");
     setTitle("");
+    setDescription("");
     setCategory("Electronics");
     setLocation("");
     setItemDate("");
-    setDescription("");
-    setType("lost");
-    setMessage("Item report submitted successfully.");
+    setImageFile(null);
+
+    form.reset();
+  } catch (error) {
+    console.error(error);
+    setErrorMessage("Something went wrong while submitting the item.");
+  } finally {
+    setIsSubmitting(false);
   }
+}
 
   return (
     <main className="min-h-screen bg-slate-50 px-6 py-10">
-      <section className="mx-auto max-w-2xl rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-bold text-slate-900">Report an Item</h1>
-        <p className="mt-2 text-sm text-slate-600">
-          Submit a lost or found item report for the campus community.
-        </p>
+      <div className="mx-auto max-w-3xl">
+        <div className="mb-8">
+          <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">
+            CampusFind
+          </p>
+          <h1 className="mt-2 text-3xl font-bold text-slate-900">
+            Report an Item
+          </h1>
+          <p className="mt-2 text-slate-600">
+            Submit a lost or found item so it can be stored in the database and
+            shown on the Browse Listings page.
+          </p>
+        </div>
 
-        <form onSubmit={handleSubmit} className="mt-8 space-y-5">
-          <div>
-            <label className="block text-sm font-medium text-slate-700">
-              Report Type
-            </label>
-            <select
-              value={type}
-              onChange={(event) =>
-                setType(event.target.value as "lost" | "found")
-              }
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+        <form
+          onSubmit={handleSubmit}
+          className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+        >
+          <div className="grid gap-5">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Item Type
+              </label>
+              <select
+                value={type}
+                onChange={(event) => setType(event.target.value as ItemType)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              >
+                <option value="lost">Lost</option>
+                <option value="found">Found</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Title
+              </label>
+              <input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                required
+                placeholder="Example: Black AirPods case"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Category
+              </label>
+              <select
+                value={category}
+                onChange={(event) => setCategory(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              >
+                {categories.map((categoryName) => (
+                  <option key={categoryName} value={categoryName}>
+                    {categoryName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Location
+              </label>
+              <input
+                value={location}
+                onChange={(event) => setLocation(event.target.value)}
+                required
+                placeholder="Example: Beatty Hall, Library, Cafeteria"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Date Lost or Found
+              </label>
+              <input
+                type="date"
+                value={itemDate}
+                onChange={(event) => setItemDate(event.target.value)}
+                required
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Description
+              </label>
+              <textarea
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                required
+                rows={5}
+                placeholder="Describe the item clearly. Include color, brand, details, or identifying features."
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Image Upload
+              </label>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handleImageChange}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              />
+              <p className="mt-2 text-sm text-slate-500">
+                Allowed: JPEG, PNG, WebP. Maximum size: 5 MB.
+              </p>
+              {imageFile && (
+                <p className="mt-2 text-sm text-green-700">
+                  Selected image: {imageFile.name}
+                </p>
+              )}
+            </div>
+
+            {message && (
+              <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-green-700">
+                {message}
+              </div>
+            )}
+
+            {errorMessage && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-700">
+                {errorMessage}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="rounded-lg bg-blue-700 px-5 py-3 font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-400"
             >
-              <option value="lost">Lost Item</option>
-              <option value="found">Found Item</option>
-            </select>
+              {isSubmitting ? "Submitting..." : "Submit Item Report"}
+            </button>
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700">
-              Item Title
-            </label>
-            <input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              type="text"
-              required
-              placeholder="Example: Black AirPods Case"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700">
-              Category
-            </label>
-            <select
-              value={category}
-              onChange={(event) => setCategory(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-            >
-              <option>Electronics</option>
-              <option>School Supplies</option>
-              <option>Clothing</option>
-              <option>Keys/ID</option>
-              <option>Personal Item</option>
-              <option>Other</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700">
-              Campus Location
-            </label>
-            <input
-              value={location}
-              onChange={(event) => setLocation(event.target.value)}
-              type="text"
-              required
-              placeholder="Example: Library, Beatty Hall, Watson Hall"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700">
-              Date Lost/Found
-            </label>
-            <input
-              value={itemDate}
-              onChange={(event) => setItemDate(event.target.value)}
-              type="date"
-              required
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700">
-              Description
-            </label>
-            <textarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              rows={4}
-              required
-              placeholder="Describe the item without revealing sensitive ownership details."
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-            />
-          </div>
-
-          <button
-            type="submit"
-            className="w-full rounded-lg bg-slate-900 px-4 py-3 font-medium text-white hover:bg-slate-700"
-          >
-            Submit Report
-          </button>
-
-          {message && (
-            <p className="rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-700">
-              {message}
-            </p>
-          )}
         </form>
-      </section>
+      </div>
     </main>
   );
 }
