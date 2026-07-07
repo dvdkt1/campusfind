@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import type { ItemType } from "@/lib/types";
 
@@ -19,6 +20,8 @@ const allowedImageTypes = ["image/jpeg", "image/png", "image/webp"];
 const maxFileSizeBytes = 5 * 1024 * 1024; // 5 MB
 
 export default function ReportPage() {
+  const router = useRouter();
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [type, setType] = useState<ItemType>("lost");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -30,6 +33,34 @@ export default function ReportPage() {
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function checkAuthentication() {
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
+
+    if (!isActive) {
+      return;
+    }
+
+    if (error || !user) {
+      router.replace("/login");
+      return;
+    }
+
+    setIsCheckingAuth(false);
+    }
+
+    checkAuthentication();
+
+    return () => {
+      isActive = false;
+    };
+  }, [router]);
 
   function handleImageChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -56,13 +87,15 @@ export default function ReportPage() {
     setImageFile(file);
   }
 
-  async function uploadImageIfSelected() {
+  async function uploadImageIfSelected(userId: string) {
     if (!imageFile) {
       return null;
     }
 
-    const fileExtension = imageFile.name.split(".").pop();
-    const filePath = `item-posts/${crypto.randomUUID()}.${fileExtension}`;
+    const fileExtension =
+      imageFile.name.split(".").pop()?.toLowerCase() ?? "jpg";
+
+    const filePath = `${userId}/${crypto.randomUUID()}.${fileExtension}`;
 
     const { error: uploadError } = await supabase.storage
       .from("item-images")
@@ -84,50 +117,77 @@ export default function ReportPage() {
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-  event.preventDefault();
+    event.preventDefault();
 
-  const form = event.currentTarget;
+    const form = event.currentTarget;
 
-  setMessage("");
-  setErrorMessage("");
-  setIsSubmitting(true);
+    setMessage("");
+    setErrorMessage("");
+    setIsSubmitting(true);
 
-  try {
-    const imageUrl = await uploadImageIfSelected();
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-    const { error } = await supabase.from("item_posts").insert({
-      type,
-      title,
-      description,
-      category,
-      location,
-      item_date: itemDate,
-      image_url: imageUrl,
-      status: "open",
-    });
+      if (userError || !user) {
+        router.replace("/login");
+        return;
+      }
 
-    if (error) {
-      throw error;
+      const imageUrl = await uploadImageIfSelected(user.id);
+
+      const { error: insertError } = await supabase
+        .from("item_posts")
+        .insert({
+          user_id: user.id,
+          type,
+          title,
+          description,
+          category,
+          location,
+          item_date: itemDate,
+          image_url: imageUrl,
+          status: "open",
+        });
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      setMessage("Item report submitted successfully.");
+      setType("lost");
+      setTitle("");
+      setDescription("");
+      setCategory("Electronics");
+      setLocation("");
+      setItemDate("");
+      setImageFile(null);
+
+      form.reset();
+    } catch (error) {
+      console.error(error);
+
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while submitting the item."
+      );
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setMessage("Item report submitted successfully.");
-    setType("lost");
-    setTitle("");
-    setDescription("");
-    setCategory("Electronics");
-    setLocation("");
-    setItemDate("");
-    setImageFile(null);
-
-    form.reset();
-  } catch (error) {
-    console.error(error);
-    setErrorMessage("Something went wrong while submitting the item.");
-  } finally {
-    setIsSubmitting(false);
   }
-}
 
+  if (isCheckingAuth) {
+    return (
+      <main className="min-h-screen bg-slate-50 px-6 py-12">
+        <div className="mx-auto max-w-3xl text-slate-600">
+          Checking your account...
+        </div>
+      </main>
+    );
+  }
   return (
     <main className="min-h-screen bg-slate-50 px-6 py-10">
       <div className="mx-auto max-w-3xl">
