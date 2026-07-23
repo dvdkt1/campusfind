@@ -113,7 +113,7 @@ export default function BrowsePage() {
                 onChange={(event) =>
                   setTypeFilter(event.target.value as "all" | ItemType)
                 }
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900"
               >
                 <option value="all">All</option>
                 <option value="lost">Lost</option>
@@ -128,7 +128,7 @@ export default function BrowsePage() {
               <select
                 value={categoryFilter}
                 onChange={(event) => setCategoryFilter(event.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900"
               >
                 {categories.map((categoryName) => (
                   <option key={categoryName} value={categoryName}>
@@ -147,7 +147,7 @@ export default function BrowsePage() {
                 onChange={(event) =>
                   setStatusFilter(event.target.value as "all" | ItemStatus)
                 }
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900"
               >
                 <option value="all">All</option>
                 <option value="open">Open</option>
@@ -164,7 +164,7 @@ export default function BrowsePage() {
                 value={locationSearch}
                 onChange={(event) => setLocationSearch(event.target.value)}
                 placeholder="Library, Beatty..."
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900"
               />
             </div>
 
@@ -176,7 +176,7 @@ export default function BrowsePage() {
                 value={keywordSearch}
                 onChange={(event) => setKeywordSearch(event.target.value)}
                 placeholder="AirPods, wallet..."
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900"
               />
             </div>
           </div>
