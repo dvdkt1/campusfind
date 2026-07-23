@@ -19,8 +19,24 @@ const categories = [
 const allowedImageTypes = ["image/jpeg", "image/png", "image/webp"];
 const maxFileSizeBytes = 5 * 1024 * 1024; // 5 MB
 
+const imageModerationEnabled =
+  process.env.NEXT_PUBLIC_ENABLE_IMAGE_MODERATION === "true";
+
+type UploadedImage = {
+  imageUrl: string;
+  filePath: string;
+};
+
+type ModerationResponse = {
+  allowed: boolean;
+  flagged?: boolean;
+  categories?: Record<string, boolean>;
+  error?: string;
+};
+
 export default function ReportPage() {
   const router = useRouter();
+
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [type, setType] = useState<ItemType>("lost");
   const [title, setTitle] = useState("");
@@ -43,16 +59,16 @@ export default function ReportPage() {
         error,
       } = await supabase.auth.getUser();
 
-    if (!isActive) {
-      return;
-    }
+      if (!isActive) {
+        return;
+      }
 
-    if (error || !user) {
-      router.replace("/login");
-      return;
-    }
+      if (error || !user) {
+        router.replace("/login");
+        return;
+      }
 
-    setIsCheckingAuth(false);
+      setIsCheckingAuth(false);
     }
 
     checkAuthentication();
@@ -87,7 +103,9 @@ export default function ReportPage() {
     setImageFile(file);
   }
 
-  async function uploadImageIfSelected(userId: string) {
+  async function uploadImageIfSelected(
+    userId: string
+  ): Promise<UploadedImage | null> {
     if (!imageFile) {
       return null;
     }
@@ -113,7 +131,41 @@ export default function ReportPage() {
       .from("item-images")
       .getPublicUrl(filePath);
 
-    return data.publicUrl;
+    return {
+      imageUrl: data.publicUrl,
+      filePath,
+    };
+  }
+
+  async function removeUploadedImage(filePath: string) {
+    const { error } = await supabase.storage
+      .from("item-images")
+      .remove([filePath]);
+
+    if (error) {
+      console.error("Failed to remove uploaded image:", error);
+    }
+  }
+
+  async function moderateImage(imageUrl: string): Promise<ModerationResponse> {
+    const response = await fetch("/api/moderate-image", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ imageUrl }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ??
+          "Image moderation is temporarily unavailable. Please try again later."
+      );
+    }
+
+    return data as ModerationResponse;
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -124,6 +176,8 @@ export default function ReportPage() {
     setMessage("");
     setErrorMessage("");
     setIsSubmitting(true);
+
+    let uploadedImage: UploadedImage | null = null;
 
     try {
       const {
@@ -136,23 +190,44 @@ export default function ReportPage() {
         return;
       }
 
-      const imageUrl = await uploadImageIfSelected(user.id);
+      uploadedImage = await uploadImageIfSelected(user.id);
 
-      const { error: insertError } = await supabase
-        .from("item_posts")
-        .insert({
-          user_id: user.id,
-          type,
-          title,
-          description,
-          category,
-          location,
-          item_date: itemDate,
-          image_url: imageUrl,
-          status: "open",
-        });
+      if (uploadedImage && imageModerationEnabled) {
+        try {
+          const moderation = await moderateImage(uploadedImage.imageUrl);
+
+          if (!moderation.allowed) {
+            await removeUploadedImage(uploadedImage.filePath);
+
+            throw new Error(
+              moderation.error ??
+                "This image was rejected because it may contain inappropriate or unsafe content."
+            );
+          }
+        } catch (moderationError) {
+          await removeUploadedImage(uploadedImage.filePath);
+
+          throw moderationError;
+        }
+      }
+
+      const { error: insertError } = await supabase.from("item_posts").insert({
+        user_id: user.id,
+        type,
+        title,
+        description,
+        category,
+        location,
+        item_date: itemDate,
+        image_url: uploadedImage?.imageUrl ?? null,
+        status: "open",
+      });
 
       if (insertError) {
+        if (uploadedImage) {
+          await removeUploadedImage(uploadedImage.filePath);
+        }
+
         throw insertError;
       }
 
@@ -188,6 +263,7 @@ export default function ReportPage() {
       </main>
     );
   }
+
   return (
     <main className="min-h-screen bg-slate-50 px-6 py-10">
       <div className="mx-auto max-w-3xl">
@@ -216,7 +292,7 @@ export default function ReportPage() {
               <select
                 value={type}
                 onChange={(event) => setType(event.target.value as ItemType)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-500"
               >
                 <option value="lost">Lost</option>
                 <option value="found">Found</option>
@@ -232,7 +308,7 @@ export default function ReportPage() {
                 onChange={(event) => setTitle(event.target.value)}
                 required
                 placeholder="Example: Black AirPods case"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-500"
               />
             </div>
 
@@ -243,7 +319,7 @@ export default function ReportPage() {
               <select
                 value={category}
                 onChange={(event) => setCategory(event.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-500"
               >
                 {categories.map((categoryName) => (
                   <option key={categoryName} value={categoryName}>
@@ -262,7 +338,7 @@ export default function ReportPage() {
                 onChange={(event) => setLocation(event.target.value)}
                 required
                 placeholder="Example: Beatty Hall, Library, Cafeteria"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-500"
               />
             </div>
 
@@ -275,7 +351,7 @@ export default function ReportPage() {
                 value={itemDate}
                 onChange={(event) => setItemDate(event.target.value)}
                 required
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-500"
               />
             </div>
 
@@ -289,7 +365,7 @@ export default function ReportPage() {
                 required
                 rows={5}
                 placeholder="Describe the item clearly. Include color, brand, details, or identifying features."
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-500"
               />
             </div>
 
@@ -301,11 +377,16 @@ export default function ReportPage() {
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
                 onChange={handleImageChange}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-500"
               />
               <p className="mt-2 text-sm text-slate-500">
                 Allowed: JPEG, PNG, WebP. Maximum size: 5 MB.
               </p>
+              {imageModerationEnabled && (
+                <p className="mt-1 text-sm text-slate-500">
+                  Uploaded images are checked before the report is submitted.
+                </p>
+              )}
               {imageFile && (
                 <p className="mt-2 text-sm text-green-700">
                   Selected image: {imageFile.name}
