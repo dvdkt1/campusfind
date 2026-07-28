@@ -227,6 +227,32 @@ export default function DashboardPage() {
     setActionMessage("Notification marked as read.");
   }
 
+  async function sendClaimStatusEmail(claimId: string) {
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+
+    if (!accessToken) {
+      return;
+    }
+
+    const response = await fetch("/api/send-claim-status-email", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ claimId }),
+    });
+
+    if (!response.ok) {
+      console.warn("Claim status email failed:", await response.text());
+    }
+  } catch (error) {
+    console.warn("Claim status email failed:", error);
+  }
+}
+
   async function updateClaimStatus(
     claimId: string,
     nextStatus: Exclude<ClaimStatus, "pending">
@@ -256,6 +282,10 @@ export default function DashboardPage() {
         claim.id === claimId ? { ...claim, status: nextStatus } : claim
       )
     );
+
+    if (process.env.NEXT_PUBLIC_ENABLE_EMAIL_NOTIFICATIONS === "true") {
+      await sendClaimStatusEmail(claimId);
+    }
 
     setActionMessage(`Claim request ${nextStatus}.`);
   }

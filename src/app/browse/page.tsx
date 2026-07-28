@@ -104,6 +104,32 @@ export default function BrowsePage() {
     setKeywordSearch("");
   }
 
+  async function sendClaimEmail(claimId: string) {
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+
+    if (!accessToken) {
+      return;
+    }
+
+    const response = await fetch("/api/send-claim-email", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ claimId }),
+    });
+
+    if (!response.ok) {
+      console.warn("Claim email failed:", await response.text());
+    }
+  } catch (error) {
+    console.warn("Claim email failed:", error);
+  }
+}
+
   async function submitClaimRequest(item: ItemPost) {
     setErrorMessage("");
     setActionMessage("");
@@ -178,6 +204,10 @@ export default function BrowsePage() {
 
       if (notificationError) {
         throw notificationError;
+      }
+
+      if (process.env.NEXT_PUBLIC_ENABLE_EMAIL_NOTIFICATIONS === "true") {
+        await sendClaimEmail(claim.id);
       }
 
       setActionMessage(
