@@ -5,7 +5,12 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
-import type { ItemPost } from "@/lib/types";
+import type {
+  ClaimRequest,
+  ClaimStatus,
+  ItemPost,
+  NotificationRecord,
+} from "@/lib/types";
 
 type MatchSuggestion = {
   item: ItemPost;
@@ -19,6 +24,8 @@ export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null);
   const [items, setItems] = useState<ItemPost[]>([]);
   const [allItems, setAllItems] = useState<ItemPost[]>([]);
+  const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
+  const [claimRequests, setClaimRequests] = useState<ClaimRequest[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -66,6 +73,35 @@ export default function DashboardPage() {
         setAllItems([]);
       } else {
         setAllItems((publicPosts ?? []) as ItemPost[]);
+      }
+
+      const { data: userNotifications, error: notificationsError } =
+        await supabase
+          .from("notifications")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false });
+
+      if (notificationsError) {
+        console.error(notificationsError);
+        setErrorMessage("Could not load notifications.");
+        setNotifications([]);
+      } else {
+        setNotifications((userNotifications ?? []) as NotificationRecord[]);
+      }
+
+      const { data: claims, error: claimsError } = await supabase
+        .from("claim_requests")
+        .select("*")
+        .or(`requester_id.eq.${user.id},owner_id.eq.${user.id}`)
+        .order("created_at", { ascending: false });
+
+      if (claimsError) {
+        console.error(claimsError);
+        setErrorMessage("Could not load claim requests.");
+        setClaimRequests([]);
+      } else {
+        setClaimRequests((claims ?? []) as ClaimRequest[]);
       }
 
       setIsLoading(false);
@@ -159,6 +195,71 @@ export default function DashboardPage() {
     setActionMessage("Item reopened.");
   }
 
+  async function markNotificationAsRead(notificationId: string) {
+    setErrorMessage("");
+    setActionMessage("");
+
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("id", notificationId)
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error(error);
+      setErrorMessage("Could not mark the notification as read.");
+      return;
+    }
+
+    setNotifications((currentNotifications) =>
+      currentNotifications.map((notification) =>
+        notification.id === notificationId
+          ? { ...notification, is_read: true }
+          : notification
+      )
+    );
+
+    setActionMessage("Notification marked as read.");
+  }
+
+  async function updateClaimStatus(
+    claimId: string,
+    nextStatus: Exclude<ClaimStatus, "pending">
+  ) {
+    setErrorMessage("");
+    setActionMessage("");
+
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("claim_requests")
+      .update({ status: nextStatus })
+      .eq("id", claimId)
+      .eq("owner_id", user.id);
+
+    if (error) {
+      console.error(error);
+      setErrorMessage("Could not update the claim request.");
+      return;
+    }
+
+    setClaimRequests((currentClaims) =>
+      currentClaims.map((claim) =>
+        claim.id === claimId ? { ...claim, status: nextStatus } : claim
+      )
+    );
+
+    setActionMessage(`Claim request ${nextStatus}.`);
+  }
+
   function getMatchSuggestions(item: ItemPost): MatchSuggestion[] {
     return allItems
       .filter((possibleMatch) => {
@@ -180,9 +281,16 @@ export default function DashboardPage() {
       .slice(0, 3);
   }
 
+  function getItemById(itemId: string) {
+    return allItems.find((item) => item.id === itemId);
+  }
+
   const lostItems = items.filter((item) => item.type === "lost");
   const foundItems = items.filter((item) => item.type === "found");
   const resolvedItems = items.filter((item) => item.status === "resolved");
+  const unreadNotifications = notifications.filter(
+    (notification) => !notification.is_read
+  );
 
   if (isLoading) {
     return (
@@ -239,11 +347,12 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <section className="mb-8 grid gap-4 md:grid-cols-4">
+        <section className="mb-8 grid gap-4 md:grid-cols-5">
           <StatCard label="Total Posts" value={items.length} />
           <StatCard label="Lost Items" value={lostItems.length} />
           <StatCard label="Found Items" value={foundItems.length} />
           <StatCard label="Resolved" value={resolvedItems.length} />
+          <StatCard label="Unread Alerts" value={unreadNotifications.length} />
         </section>
 
         {actionMessage && (
@@ -258,11 +367,218 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {notifications.length > 0 && (
+          <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">
+                  Notifications
+                </p>
+                <h2 className="mt-1 text-2xl font-bold text-slate-900">
+                  Recovery Alerts
+                </h2>
+              </div>
+
+              <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-bold text-blue-700">
+                {unreadNotifications.length} unread
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              {notifications.map((notification) => (
+                <div
+                  key={notification.id}
+                  className={`rounded-xl border p-4 ${
+                    notification.is_read
+                      ? "border-slate-200 bg-white"
+                      : "border-blue-200 bg-blue-50"
+                  }`}
+                >
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <p className="font-bold text-slate-900">
+                        {notification.title}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-700">
+                        {notification.message}
+                      </p>
+                      <p className="mt-2 text-xs text-slate-500">
+                        {new Date(notification.created_at).toLocaleString()}
+                      </p>
+                    </div>
+
+                    {!notification.is_read && (
+                      <button
+                        type="button"
+                        onClick={() => markNotificationAsRead(notification.id)}
+                        className="rounded-lg border border-blue-300 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+                      >
+                        Mark as read
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {claimRequests.length > 0 && (
+  <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">
+      Claim Requests
+    </p>
+
+    <h2 className="mt-1 text-2xl font-bold text-slate-900">
+      Item Recovery Requests
+    </h2>
+
+    <p className="mt-2 text-sm text-slate-600">
+      Review claim messages along with the item image, location, date, and
+      category before accepting or rejecting a request.
+    </p>
+
+    <div className="mt-5 grid gap-4 md:grid-cols-2">
+      {claimRequests.map((claim) => {
+        const relatedItem = getItemById(claim.item_id);
+        const isOwner = claim.owner_id === user?.id;
+
+        return (
+          <div
+            key={claim.id}
+            className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
+          >
+            {relatedItem?.image_url ? (
+              <img
+                src={relatedItem.image_url}
+                alt={relatedItem.title}
+                className="h-44 w-full object-cover"
+              />
+            ) : (
+              <div className="flex h-44 w-full items-center justify-center bg-slate-100 text-sm text-slate-500">
+                No image available for this listing
+              </div>
+            )}
+
+            <div className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                    {isOwner ? "Incoming claim" : "Your claim"}
+                  </p>
+
+                  <h3 className="mt-1 text-lg font-bold text-slate-900">
+                    {relatedItem?.title ?? "Item listing"}
+                  </h3>
+                </div>
+
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide ${
+                    claim.status === "approved"
+                      ? "bg-green-100 text-green-700"
+                      : claim.status === "rejected"
+                        ? "bg-red-100 text-red-700"
+                        : "bg-yellow-100 text-yellow-700"
+                  }`}
+                >
+                  {claim.status}
+                </span>
+              </div>
+
+              {relatedItem ? (
+                <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
+                        relatedItem.type === "lost"
+                          ? "bg-red-100 text-red-700"
+                          : "bg-green-100 text-green-700"
+                      }`}
+                    >
+                      {relatedItem.type}
+                    </span>
+
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700">
+                      {relatedItem.status}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 text-sm text-slate-700">
+                    <p>
+                      <span className="font-semibold">Category:</span>{" "}
+                      {relatedItem.category}
+                    </p>
+
+                    <p>
+                      <span className="font-semibold">Location:</span>{" "}
+                      {relatedItem.location}
+                    </p>
+
+                    <p>
+                      <span className="font-semibold">Date:</span>{" "}
+                      {relatedItem.item_date}
+                    </p>
+
+                    <p>
+                      <span className="font-semibold">Post ID:</span>{" "}
+                      {getShortId(relatedItem.id)}
+                    </p>
+                  </div>
+
+                  <p className="mt-3 line-clamp-3 text-sm text-slate-600">
+                    {relatedItem.description}
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-4 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">
+                  The related item listing could not be loaded.
+                </div>
+              )}
+
+              <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-blue-700">
+                  Claim Message
+                </p>
+
+                <p className="mt-2 text-sm text-slate-800">
+                  {claim.message}
+                </p>
+              </div>
+
+              <p className="mt-3 text-xs text-slate-500">
+                Claim submitted {new Date(claim.created_at).toLocaleString()}
+              </p>
+
+              {isOwner && claim.status === "pending" && (
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => updateClaimStatus(claim.id, "approved")}
+                    className="rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800"
+                  >
+                    Accept as Likely Match
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => updateClaimStatus(claim.id, "rejected")}
+                    className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+                  >
+                    Reject Claim
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </section>
+)}
+
         {items.length === 0 ? (
           <section className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-            <h2 className="text-2xl font-bold text-slate-900">
-              No posts yet
-            </h2>
+            <h2 className="text-2xl font-bold text-slate-900">No posts yet</h2>
 
             <p className="mt-2 text-slate-600">
               Once you report a lost or found item, it will appear here.
@@ -428,6 +744,10 @@ function StatCard({ label, value }: { label: string; value: number }) {
   );
 }
 
+function getShortId(id: string) {
+  return `...${id.slice(-6)}`;
+}
+
 function calculateMatchScore(
   sourceItem: ItemPost,
   possibleMatch: ItemPost
@@ -480,11 +800,7 @@ function locationsAreSimilar(locationA: string, locationB: string) {
   const first = normalizeText(locationA);
   const second = normalizeText(locationB);
 
-  return (
-    first === second ||
-    first.includes(second) ||
-    second.includes(first)
-  );
+  return first === second || first.includes(second) || second.includes(first);
 }
 
 function getDayDifference(dateA: string, dateB: string) {

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import type { ItemPost, ItemStatus, ItemType } from "@/lib/types";
 
@@ -17,15 +19,32 @@ const categories = [
 ];
 
 export default function BrowsePage() {
+  const router = useRouter();
+
+  const [user, setUser] = useState<User | null>(null);
   const [items, setItems] = useState<ItemPost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
+  const [claimingItemId, setClaimingItemId] = useState<string | null>(null);
 
   const [typeFilter, setTypeFilter] = useState<"all" | ItemType>("all");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState<"all" | ItemStatus>("all");
   const [locationSearch, setLocationSearch] = useState("");
   const [keywordSearch, setKeywordSearch] = useState("");
+
+  useEffect(() => {
+    async function fetchCurrentUser() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      setUser(user);
+    }
+
+    fetchCurrentUser();
+  }, []);
 
   useEffect(() => {
     async function fetchItems() {
@@ -54,9 +73,7 @@ export default function BrowsePage() {
       }
 
       if (keywordSearch.trim() !== "") {
-        const cleanedKeyword = keywordSearch
-          .trim()
-          .replace(/[,%()]/g, "");
+        const cleanedKeyword = keywordSearch.trim().replace(/[,%()]/g, "");
 
         query = query.or(
           `title.ilike.%${cleanedKeyword}%,description.ilike.%${cleanedKeyword}%`
@@ -85,6 +102,93 @@ export default function BrowsePage() {
     setStatusFilter("all");
     setLocationSearch("");
     setKeywordSearch("");
+  }
+
+  async function submitClaimRequest(item: ItemPost) {
+    setErrorMessage("");
+    setActionMessage("");
+
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+
+    if (!item.user_id) {
+      setErrorMessage(
+        "This listing cannot receive claim requests because it is not linked to an owner."
+      );
+      return;
+    }
+
+    if (item.user_id === user.id) {
+      setErrorMessage("You cannot create a claim request for your own post.");
+      return;
+    }
+
+    const defaultMessage =
+      item.type === "found"
+        ? "I think this might be my item. Can we coordinate recovery?"
+        : "I think I found this item. Can we coordinate the return?";
+
+    const claimMessage = window.prompt(
+      "Add a short message for the person who posted this item:",
+      defaultMessage
+    );
+
+    if (claimMessage === null) {
+      return;
+    }
+
+    const cleanedMessage = claimMessage.trim();
+
+    if (cleanedMessage.length < 5) {
+      setErrorMessage("Please enter a short claim message.");
+      return;
+    }
+
+    setClaimingItemId(item.id);
+
+    try {
+      const { data: claim, error: claimError } = await supabase
+        .from("claim_requests")
+        .insert({
+          item_id: item.id,
+          requester_id: user.id,
+          owner_id: item.user_id,
+          message: cleanedMessage,
+          status: "pending",
+        })
+        .select("id")
+        .single();
+
+      if (claimError) {
+        throw claimError;
+      }
+
+      const { error: notificationError } = await supabase
+        .from("notifications")
+        .insert({
+          user_id: item.user_id,
+          title: "New claim request",
+          message: `${user.email ?? "A user"} submitted a claim request for your listing: ${item.title}.`,
+          related_item_id: item.id,
+          related_claim_id: claim.id,
+          is_read: false,
+        });
+
+      if (notificationError) {
+        throw notificationError;
+      }
+
+      setActionMessage(
+        "Claim request sent. The person who posted this item will see it in their dashboard."
+      );
+    } catch (error) {
+      console.error(error);
+      setErrorMessage("Could not send the claim request.");
+    } finally {
+      setClaimingItemId(null);
+    }
   }
 
   return (
@@ -164,7 +268,7 @@ export default function BrowsePage() {
                 value={locationSearch}
                 onChange={(event) => setLocationSearch(event.target.value)}
                 placeholder="Library, Beatty..."
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-500"
               />
             </div>
 
@@ -176,7 +280,7 @@ export default function BrowsePage() {
                 value={keywordSearch}
                 onChange={(event) => setKeywordSearch(event.target.value)}
                 placeholder="AirPods, wallet..."
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-500"
               />
             </div>
           </div>
@@ -195,6 +299,12 @@ export default function BrowsePage() {
           </div>
         </section>
 
+        {actionMessage && (
+          <div className="mb-6 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-green-700">
+            {actionMessage}
+          </div>
+        )}
+
         {isLoading && (
           <div className="rounded-xl border border-slate-200 bg-white p-6 text-slate-600">
             Loading listings...
@@ -202,7 +312,7 @@ export default function BrowsePage() {
         )}
 
         {errorMessage && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">
+          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">
             {errorMessage}
           </div>
         )}
@@ -214,65 +324,103 @@ export default function BrowsePage() {
         )}
 
         <section className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-          {items.map((item) => (
-            <article
-              key={item.id}
-              className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
-            >
-              {item.image_url ? (
-                <img
-                  src={item.image_url}
-                  alt={item.title}
-                  className="h-48 w-full object-cover"
-                />
-              ) : (
-                <div className="flex h-48 items-center justify-center bg-slate-100 text-sm text-slate-500">
-                  No image uploaded
-                </div>
-              )}
+          {items.map((item) => {
+            const canClaim =
+              item.status === "open" && item.user_id && item.user_id !== user?.id;
 
-              <div className="p-5">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
-                      item.type === "lost"
-                        ? "bg-red-100 text-red-700"
-                        : "bg-green-100 text-green-700"
-                    }`}
-                  >
-                    {item.type}
-                  </span>
+            return (
+              <article
+                key={item.id}
+                className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+              >
+                {item.image_url ? (
+                  <img
+                    src={item.image_url}
+                    alt={item.title}
+                    className="h-48 w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-48 items-center justify-center bg-slate-100 text-sm text-slate-500">
+                    No image uploaded
+                  </div>
+                )}
 
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-                    {item.status}
-                  </span>
-                </div>
+                <div className="p-5">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
+                        item.type === "lost"
+                          ? "bg-red-100 text-red-700"
+                          : "bg-green-100 text-green-700"
+                      }`}
+                    >
+                      {item.type}
+                    </span>
 
-                <h2 className="text-xl font-bold text-slate-900">
-                  {item.title}
-                </h2>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                      {item.status}
+                    </span>
+                  </div>
 
-                <p className="mt-2 text-sm text-slate-600">
-                  {item.description}
-                </p>
+                  <h2 className="text-xl font-bold text-slate-900">
+                    {item.title}
+                  </h2>
 
-                <div className="mt-4 space-y-2 text-sm text-slate-700">
-                  <p>
-                    <span className="font-semibold">Category:</span>{" "}
-                    {item.category}
+                  <p className="mt-2 text-sm text-slate-600">
+                    {item.description}
                   </p>
-                  <p>
-                    <span className="font-semibold">Location:</span>{" "}
-                    {item.location}
-                  </p>
-                  <p>
-                    <span className="font-semibold">Date:</span>{" "}
-                    {item.item_date}
-                  </p>
+
+                  <div className="mt-4 space-y-2 text-sm text-slate-700">
+                    <p>
+                      <span className="font-semibold">Category:</span>{" "}
+                      {item.category}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Location:</span>{" "}
+                      {item.location}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Date:</span>{" "}
+                      {item.item_date}
+                    </p>
+                  </div>
+
+                  <div className="mt-5">
+                    {!user ? (
+                      <button
+                        type="button"
+                        onClick={() => router.push("/login")}
+                        className="w-full rounded-lg border border-slate-300 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-100"
+                      >
+                        Log in to request recovery
+                      </button>
+                    ) : canClaim ? (
+                      <button
+                        type="button"
+                        onClick={() => submitClaimRequest(item)}
+                        disabled={claimingItemId === item.id}
+                        className="w-full rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                      >
+                        {claimingItemId === item.id
+                          ? "Sending..."
+                          : item.type === "found"
+                            ? "This might be mine"
+                            : "I found this item"}
+                      </button>
+                    ) : item.user_id === user.id ? (
+                      <p className="rounded-lg bg-slate-50 px-4 py-2 text-center text-sm text-slate-500">
+                        This is your post.
+                      </p>
+                    ) : (
+                      <p className="rounded-lg bg-slate-50 px-4 py-2 text-center text-sm text-slate-500">
+                        Claim requests are unavailable for this listing.
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </section>
       </div>
     </main>
