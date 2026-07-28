@@ -297,7 +297,8 @@ export default function DashboardPage() {
           possibleMatch.id !== item.id &&
           possibleMatch.type !== item.type &&
           possibleMatch.status === "open" &&
-          item.status === "open"
+          item.status === "open" &&
+          possibleMatch.user_id !== item.user_id
         );
       })
       .map((possibleMatch) => {

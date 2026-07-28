@@ -27,6 +27,8 @@ export default function BrowsePage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [claimingItemId, setClaimingItemId] = useState<string | null>(null);
+  const [selectedClaimItem, setSelectedClaimItem] = useState<ItemPost | null>(null);
+  const [claimMessage, setClaimMessage] = useState("");
 
   const [typeFilter, setTypeFilter] = useState<"all" | ItemType>("all");
   const [categoryFilter, setCategoryFilter] = useState("All");
@@ -130,96 +132,127 @@ export default function BrowsePage() {
   }
 }
 
-  async function submitClaimRequest(item: ItemPost) {
-    setErrorMessage("");
-    setActionMessage("");
+  function getDefaultClaimMessage(item: ItemPost) {
+  return item.type === "found"
+    ? "I think this might be my item. I can provide identifying details to confirm."
+    : "I think I found this item. I can provide more details about where I found it.";
+}
 
-    if (!user) {
-      router.push("/login");
-      return;
-    }
+function openClaimModal(item: ItemPost) {
+  setErrorMessage("");
+  setActionMessage("");
 
-    if (!item.user_id) {
-      setErrorMessage(
-        "This listing cannot receive claim requests because it is not linked to an owner."
-      );
-      return;
-    }
-
-    if (item.user_id === user.id) {
-      setErrorMessage("You cannot create a claim request for your own post.");
-      return;
-    }
-
-    const defaultMessage =
-      item.type === "found"
-        ? "I think this might be my item. Can we coordinate recovery?"
-        : "I think I found this item. Can we coordinate the return?";
-
-    const claimMessage = window.prompt(
-      "Add a short message for the person who posted this item:",
-      defaultMessage
-    );
-
-    if (claimMessage === null) {
-      return;
-    }
-
-    const cleanedMessage = claimMessage.trim();
-
-    if (cleanedMessage.length < 5) {
-      setErrorMessage("Please enter a short claim message.");
-      return;
-    }
-
-    setClaimingItemId(item.id);
-
-    try {
-      const { data: claim, error: claimError } = await supabase
-        .from("claim_requests")
-        .insert({
-          item_id: item.id,
-          requester_id: user.id,
-          owner_id: item.user_id,
-          message: cleanedMessage,
-          status: "pending",
-        })
-        .select("id")
-        .single();
-
-      if (claimError) {
-        throw claimError;
-      }
-
-      const { error: notificationError } = await supabase
-        .from("notifications")
-        .insert({
-          user_id: item.user_id,
-          title: "New claim request",
-          message: `${user.email ?? "A user"} submitted a claim request for your listing: ${item.title}.`,
-          related_item_id: item.id,
-          related_claim_id: claim.id,
-          is_read: false,
-        });
-
-      if (notificationError) {
-        throw notificationError;
-      }
-
-      if (process.env.NEXT_PUBLIC_ENABLE_EMAIL_NOTIFICATIONS === "true") {
-        await sendClaimEmail(claim.id);
-      }
-
-      setActionMessage(
-        "Claim request sent. The person who posted this item will see it in their dashboard."
-      );
-    } catch (error) {
-      console.error(error);
-      setErrorMessage("Could not send the claim request.");
-    } finally {
-      setClaimingItemId(null);
-    }
+  if (!user) {
+    router.push("/login");
+    return;
   }
+
+  if (!item.user_id) {
+    setErrorMessage(
+      "This listing cannot receive claim requests because it is not linked to an owner."
+    );
+    return;
+  }
+
+  if (item.user_id === user.id) {
+    setErrorMessage("You cannot create a claim request for your own post.");
+    return;
+  }
+
+  setSelectedClaimItem(item);
+  setClaimMessage(getDefaultClaimMessage(item));
+}
+
+function closeClaimModal() {
+  if (claimingItemId) {
+    return;
+  }
+
+  setSelectedClaimItem(null);
+  setClaimMessage("");
+}
+
+  async function submitClaimRequest(item: ItemPost) {
+  setErrorMessage("");
+  setActionMessage("");
+
+  if (!user) {
+    router.push("/login");
+    return;
+  }
+
+  if (!item.user_id) {
+    setErrorMessage(
+      "This listing cannot receive claim requests because it is not linked to an owner."
+    );
+    return;
+  }
+
+  if (item.user_id === user.id) {
+    setErrorMessage("You cannot create a claim request for your own post.");
+    return;
+  }
+
+  const cleanedMessage = claimMessage.trim();
+
+  if (cleanedMessage.length < 10) {
+    setErrorMessage("Please enter a claim message with at least 10 characters.");
+    return;
+  }
+
+  setClaimingItemId(item.id);
+
+  try {
+    const { data: claim, error: claimError } = await supabase
+      .from("claim_requests")
+      .insert({
+        item_id: item.id,
+        requester_id: user.id,
+        owner_id: item.user_id,
+        message: cleanedMessage,
+        status: "pending",
+      })
+      .select("id")
+      .single();
+
+    if (claimError) {
+      throw claimError;
+    }
+
+    const { error: notificationError } = await supabase
+      .from("notifications")
+      .insert({
+        user_id: item.user_id,
+        title: "New claim request",
+        message: `${
+          user.email ?? "A user"
+        } submitted a claim request for your listing: ${item.title}.`,
+        related_item_id: item.id,
+        related_claim_id: claim.id,
+        is_read: false,
+      });
+
+    if (notificationError) {
+      throw notificationError;
+    }
+
+    if (process.env.NEXT_PUBLIC_ENABLE_EMAIL_NOTIFICATIONS === "true") {
+      await sendClaimEmail(claim.id);
+    }
+
+    setSelectedClaimItem(null);
+    setClaimMessage("");
+
+    setActionMessage(
+      "Claim request sent. The person who posted this item will see it in their dashboard."
+    );
+  } catch (error) {
+    console.error(error);
+    setErrorMessage("Could not send the claim request.");
+  } finally {
+    setClaimingItemId(null);
+  }
+}
 
   return (
     <main className="min-h-screen bg-slate-50 px-6 py-10">
@@ -427,7 +460,7 @@ export default function BrowsePage() {
                     ) : canClaim ? (
                       <button
                         type="button"
-                        onClick={() => submitClaimRequest(item)}
+                        onClick={() => openClaimModal(item)}
                         disabled={claimingItemId === item.id}
                         className="w-full rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-400"
                       >
@@ -452,7 +485,149 @@ export default function BrowsePage() {
             );
           })}
         </section>
+        {selectedClaimItem && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
+    <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+      {selectedClaimItem.image_url ? (
+        <img
+          src={selectedClaimItem.image_url}
+          alt={selectedClaimItem.title}
+          className="h-56 w-full object-cover"
+        />
+      ) : (
+        <div className="flex h-56 w-full items-center justify-center bg-slate-100 text-sm text-slate-500">
+          No image uploaded for this listing
+        </div>
+      )}
+
+      <div className="p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">
+              Claim Request
+            </p>
+
+            <h2 className="mt-1 text-2xl font-bold text-slate-900">
+              {selectedClaimItem.type === "found"
+                ? "Is this your item?"
+                : "Did you find this item?"}
+            </h2>
+
+            <p className="mt-2 text-sm text-slate-600">
+              Send a message to the person who posted this listing. Include
+              details that help prove the item matches.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={closeClaimModal}
+            disabled={claimingItemId === selectedClaimItem.id}
+            className="rounded-full border border-slate-300 px-3 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="mb-3 flex flex-wrap gap-2">
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
+                selectedClaimItem.type === "lost"
+                  ? "bg-red-100 text-red-700"
+                  : "bg-green-100 text-green-700"
+              }`}
+            >
+              {selectedClaimItem.type}
+            </span>
+
+            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700">
+              {selectedClaimItem.status}
+            </span>
+          </div>
+
+          <h3 className="text-lg font-bold text-slate-900">
+            {selectedClaimItem.title}
+          </h3>
+
+          <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+            <p>
+              <span className="font-semibold">Category:</span>{" "}
+              {selectedClaimItem.category}
+            </p>
+
+            <p>
+              <span className="font-semibold">Location:</span>{" "}
+              {selectedClaimItem.location}
+            </p>
+
+            <p>
+              <span className="font-semibold">Date:</span>{" "}
+              {selectedClaimItem.item_date}
+            </p>
+
+            <p>
+              <span className="font-semibold">Post ID:</span>{" "}
+              {getShortId(selectedClaimItem.id)}
+            </p>
+          </div>
+
+          <p className="mt-3 line-clamp-3 text-sm text-slate-600">
+            {selectedClaimItem.description}
+          </p>
+        </div>
+
+        <div className="mt-5">
+          <label className="mb-2 block text-sm font-semibold text-slate-800">
+            Your claim message
+          </label>
+
+          <textarea
+            value={claimMessage}
+            onChange={(event) => setClaimMessage(event.target.value)}
+            rows={5}
+            placeholder="Example: I lost black AirPods near the library. The case has a small scratch on the front and my initials are inside."
+            className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+          />
+
+          <p className="mt-2 text-sm text-slate-500">
+            Include details such as color, brand, scratches, stickers,
+            initials, contents, exact location, or time lost/found.
+          </p>
+        </div>
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={closeClaimModal}
+            disabled={claimingItemId === selectedClaimItem.id}
+            className="rounded-lg border border-slate-300 px-5 py-2 font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            onClick={() => submitClaimRequest(selectedClaimItem)}
+            disabled={
+              claimingItemId === selectedClaimItem.id ||
+              claimMessage.trim().length < 10
+            }
+            className="rounded-lg bg-blue-700 px-5 py-2 font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+          >
+            {claimingItemId === selectedClaimItem.id
+              ? "Sending claim..."
+              : "Submit Claim Request"}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
       </div>
     </main>
   );
+}
+function getShortId(id: string) {
+  return `...${id.slice(-6)}`;
 }
