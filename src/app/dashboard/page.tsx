@@ -339,9 +339,12 @@ export default function DashboardPage() {
         <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">
-                CampusFind Dashboard
-              </p>
+              <Link
+  href="/"
+  className="text-sm font-semibold uppercase tracking-wide text-blue-700 hover:text-blue-900"
+>
+  CampusFind Dashboard
+</Link>
 
               <h1 className="mt-2 text-3xl font-bold text-slate-900">
                 My Item Posts

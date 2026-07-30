@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
@@ -258,9 +259,12 @@ function closeClaimModal() {
     <main className="min-h-screen bg-slate-50 px-6 py-10">
       <div className="mx-auto max-w-6xl">
         <div className="mb-8">
-          <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">
-            CampusFind
-          </p>
+          <Link
+  href="/"
+  className="text-sm font-semibold uppercase tracking-wide text-blue-700 hover:text-blue-900"
+>
+  CampusFind
+</Link>
           <h1 className="mt-2 text-3xl font-bold text-slate-900">
             Browse Listings
           </h1>
