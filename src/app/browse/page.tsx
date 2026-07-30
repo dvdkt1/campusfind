@@ -486,13 +486,13 @@ function closeClaimModal() {
           })}
         </section>
         {selectedClaimItem && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
-    <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+  <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 px-4 py-6">
+  <div className="mx-auto w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
       {selectedClaimItem.image_url ? (
         <img
           src={selectedClaimItem.image_url}
           alt={selectedClaimItem.title}
-          className="h-56 w-full object-cover"
+          className="h-40 w-full object-cover sm:h-56"
         />
       ) : (
         <div className="flex h-56 w-full items-center justify-center bg-slate-100 text-sm text-slate-500">
@@ -596,7 +596,7 @@ function closeClaimModal() {
           </p>
         </div>
 
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+        <div className="sticky bottom-0 -mx-6 mt-6 flex flex-col gap-3 border-t border-slate-200 bg-white px-6 py-4 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={closeClaimModal}
